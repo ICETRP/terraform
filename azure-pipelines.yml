@@ -24,7 +24,7 @@ stages:
     - task: AzureCLI@2
       displayName: 'Authenticate to Azure'
       inputs:
-        azureSubscription: 'azure-terraform-sp'  # ← Your service connection name
+        azureSubscription: 'Azure subscription 1'  # ← Your service connection name
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         addSpnToEnvironment: true  # ← Exports ARM_CLIENT_ID, ARM_CLIENT_SECRET, etc. as env vars
