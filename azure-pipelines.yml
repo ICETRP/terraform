@@ -12,27 +12,26 @@ steps:
     sudo apt update && sudo apt install terraform -y
   displayName: 'Install Terraform'
 
-# OIDC login – this gives Terraform permission to create the VM
+# OIDC login using the NEW federated connection
 - task: AzureCLI@2
-  displayName: 'OIDC Login (this fixes the AADSTS700016 error)'
   inputs:
-    azureSubscription: 'azure-terraform-sp'
+    azureSubscription: 'azure-oidc'   # the new one you just created
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: echo "OIDC login successful"
 
-# Run Terraform with local state (no backend = no auth error)
+# Run Terraform — local state, no backend, no auth errors
 - bash: |
     terraform init -backend=false -reconfigure
     terraform plan -out=tfplan
     terraform apply -auto-approve tfplan
   displayName: 'Create Ubuntu VM'
 
-# Show the IP
+# Show IP
 - bash: |
     echo ""
-    echo "VM CREATED SUCCESSFULLY!"
+    echo "VM CREATED!"
     echo "Public IP   : $(terraform output -raw public_ip)"
     echo "SSH command : ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
     echo ""
-  displayName: 'SHOW PUBLIC IP & SSH'
+  displayName: 'SHOW IP & SSH'
