@@ -5,7 +5,7 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  storageAccountName: 'tfstate73829'   # ← ONLY CHANGE THIS IF NEEDED
+  storageAccountName: 'tfstate73829'   # ← YOUR STORAGE ACCOUNT NAME
 
 steps:
 # 1. Install Terraform
@@ -15,31 +15,42 @@ steps:
     sudo apt update && sudo apt install terraform -y
   displayName: 'Install Terraform'
 
-# 2. OIDC login (this is the ONLY method that works reliably in 2025)
+# 2. Generate SAS token for the storage account (backend only) + OIDC login
 - task: AzureCLI@2
-  displayName: 'Azure OIDC Login (magic)'
+  displayName: 'Generate SAS Token + OIDC Login'
   inputs:
-    azureSubscription: 'azure-terraform-sp'   # your service connection
+    azureSubscription: 'azure-terraform-sp'
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: |
-      echo "Using federated OIDC credentials – no secrets, no ARM vars needed"
+      # OIDC login (for the provider – VM creation)
+      echo "OIDC login successful"
 
-# 3. Terraform – now uses OIDC automatically (no env vars!)
+      # Generate 30-day SAS token for the container only
+      sas=$(az storage container generate-sas \
+        --account-name $storageAccountName \
+        --name tfstate \
+        --permissions dlrw \
+        --expiry 2026-01-31T00:00:00Z \
+        --auth-mode login --as-user --output tsv)
+
+      echo "##vso[task.setvariable variable=STORAGE_SAS_TOKEN]$sas"
+
+# 3. Terraform – backend uses SAS token, provider uses OIDC (perfect combo)
 - bash: |
     terraform init \
       -backend-config="resource_group_name=tf-win-rg" \
       -backend-config="storage_account_name=$(storageAccountName)" \
       -backend-config="container_name=tfstate" \
       -backend-config="key=azure-vm.tfstate" \
+      -backend-config="sas_token=$(STORAGE_SAS_TOKEN)" \
       -reconfigure
 
     terraform plan -out=tfplan
-
     terraform apply -auto-approve tfplan
   displayName: 'Terraform Init → Plan → Apply (creates VM)'
 
-# 4. Show the IP
+# 4. Show IP
 - bash: |
     echo ""
     echo "UBUNTU VM CREATED SUCCESSFULLY!"
