@@ -1,0 +1,55 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - name: terraformVersion
+    value: 'latest'
+
+stages:
+- stage: Plan
+  jobs:
+  - job: TerraformPlan
+    steps:
+    - task: TerraformInstaller@0
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    - script: |
+        terraform init -backend-config="storage_account_name=$(TF_STATE_ACCOUNT)" \
+                                 -backend-config="container_name=tfstate" \
+                                 -backend-config="key=azure-vm.tfstate"
+        terraform plan -out=tfplan
+      displayName: 'Terraform Init + Plan'
+      env:
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
+
+    - publish: $(System.DefaultWorkingDirectory)
+      artifact: drop
+
+- stage: Apply
+  condition: succeeded()
+  dependsOn: Plan
+  jobs:
+  - job: TerraformApply
+    steps:
+    - task: TerraformInstaller@0
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    - script: |
+        terraform init -backend-config="storage_account_name=$(TF_STATE_ACCOUNT)" \
+                                 -backend-config="container_name=tfstate" \
+                                 -backend-config="key=azure-vm.tfstate"
+        terraform apply -auto-approve tfplan
+      displayName: 'Terraform Apply'
+      env:
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
