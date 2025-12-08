@@ -5,7 +5,7 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  storageAccountName: 'tfstate73829'   # ← YOUR STORAGE ACCOUNT NAME
+  storageAccountName: 'tfstate73829'   # keep this for later
 
 steps:
 # 1. Install Terraform
@@ -15,46 +15,43 @@ steps:
     sudo apt update && sudo apt install terraform -y
   displayName: 'Install Terraform'
 
-# 2. Generate SAS token for the storage account (backend only) + OIDC login
+# 2. OIDC login (this works — gives provider access)
 - task: AzureCLI@2
-  displayName: 'Generate SAS Token + OIDC Login'
+  displayName: 'Azure OIDC Login'
   inputs:
     azureSubscription: 'azure-terraform-sp'
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: |
-      # OIDC login (for the provider – VM creation)
-      echo "OIDC login successful"
+      echo "OIDC login successful – Terraform can now create VMs"
 
-      # Generate 30-day SAS token for the container only
-      sas=$(az storage container generate-sas \
-        --account-name $storageAccountName \
-        --name tfstate \
-        --permissions dlrw \
-        --expiry 2026-01-31T00:00:00Z \
-        --auth-mode login --as-user --output tsv)
+# 3. FIRST RUN: Use LOCAL state (no backend = no auth error)
+- bash: |
+    # Remove any backend config temporarily
+    terraform init -reconfigure -backend=false
 
-      echo "##vso[task.setvariable variable=STORAGE_SAS_TOKEN]$sas"
+    terraform plan -out=tfplan
 
-# 3. Terraform – backend uses SAS token, provider uses OIDC (perfect combo)
+    terraform apply -auto-approve tfplan
+  displayName: 'FIRST RUN: Create VM with local state'
+
+# 4. NOW switch to remote state forever
 - bash: |
     terraform init \
       -backend-config="resource_group_name=tf-win-rg" \
       -backend-config="storage_account_name=$(storageAccountName)" \
       -backend-config="container_name=tfstate" \
       -backend-config="key=azure-vm.tfstate" \
-      -backend-config="sas_token=$(STORAGE_SAS_TOKEN)" \
-      -reconfigure
+      -migrate-state -force-copy
 
-    terraform plan -out=tfplan
-    terraform apply -auto-approve tfplan
-  displayName: 'Terraform Init → Plan → Apply (creates VM)'
+    echo "Remote state enabled forever"
+  displayName: 'Switch to remote state'
 
-# 4. Show IP
+# 5.Show IP
 - bash: |
     echo ""
-    echo "UBUNTU VM CREATED SUCCESSFULLY!"
+    echo "UBUNTU VM IS LIVE!"
     echo "Public IP   : $(terraform output -raw public_ip)"
     echo "SSH command : ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
     echo ""
-  displayName: 'Show Public IP & SSH Command'
+  displayName: 'SHOW PUBLIC IP & SSH'
