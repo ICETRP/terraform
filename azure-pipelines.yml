@@ -5,35 +5,59 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  storageAccountName: 'tfstate73829'   # ← YOUR REAL STORAGE ACCOUNT NAME
+  storageAccountName: 'tfstate73829'   # ← YOUR EXACT STORAGE ACCOUNT NAME
 
-steps:
-# Install Terraform
-- bash: |
-    wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
-    echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-    sudo apt update && sudo apt install terraform -y
-  displayName: 'Install Terraform'
+stages:
+- stage: Terraform
+  displayName: 'Terraform: Init, Plan, Apply'
+  jobs:
+  - job: TerraformJob
+    steps:
+    # Install Terraform using the official task (no manual bash needed)
+    - task: TerraformInstaller@5
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: 'latest'
 
-# Terraform Init – now ARM_* variables are injected automatically
-- bash: |
-    terraform init \
-      -backend-config="resource_group_name=tf-win-rg" \
-      -backend-config="storage_account_name=$(storageAccountName)" \
-      -backend-config="container_name=tfstate" \
-      -backend-config="key=azure-vm.tfstate"
-  displayName: 'Terraform Init'
+    # Init with remote state – auth via service connection
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+        backendType: 'azurerm'
+        backendServiceArm: 'azure-terraform-sp'  # ← Your service connection name
+        backendAzureRmResourceGroupName: 'tf-win-rg'
+        backendAzureRmStorageAccountName: '$(storageAccountName)'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: 'azure-vm.tfstate'
 
-# Plan + Apply
-- bash: terraform plan -out=tfplan
-  displayName: 'Terraform Plan'
+    # Plan – auth via service connection
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Plan'
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+        environmentServiceNameAzureRm: 'azure-terraform-sp'  # ← Your service connection name
+        commandOptions: '-out=tfplan'
 
-- bash: terraform apply -auto-approve tfplan
-  displayName: 'Terraform Apply – Creates your Ubuntu VM'
+    # Apply – auth via service connection (only on main branch)
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Apply – Creates Ubuntu VM'
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+        environmentServiceNameAzureRm: 'azure-terraform-sp'  # ← Your service connection name
+        commandOptions: 'tfplan'
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
 
-# Show IP
-- bash: |
-    echo "SUCCESS! YOUR VM IS READY"
-    echo "Public IP: $(terraform output -raw public_ip)"
-    echo "SSH: ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
-  displayName: 'Show Public IP & SSH Command'
+    # Show outputs
+    - bash: |
+        echo "SUCCESS! VM CREATED/UPDATED"
+        terraform output -raw public_ip || echo "Check Azure portal for IP"
+        terraform output ssh_command || echo "SSH: ssh -i azure-key.pem azureuser@<IP>"
+      displayName: 'Show VM Public IP & SSH Command'
+      condition: succeeded()
