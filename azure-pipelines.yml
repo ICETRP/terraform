@@ -7,49 +7,51 @@ pool:
 variables:
   - name: terraformVersion
     value: 'latest'
+  - name: storageAccountName
+    value: 'tfstate73829'   # ← CHANGE TO YOUR STORAGE NAME FROM STEP 5
 
 stages:
 - stage: Plan
   jobs:
-  - job: TerraformPlan
+  - job: Plan
     steps:
     - task: TerraformInstaller@0
       inputs:
         terraformVersion: $(terraformVersion)
 
     - script: |
-        terraform init -backend-config="storage_account_name=$(TF_STATE_ACCOUNT)" \
-                                 -backend-config="container_name=tfstate" \
-                                 -backend-config="key=azure-vm.tfstate"
+        terraform init \
+          -backend-config="storage_account_name=$(storageAccountName)" \
+          -backend-config="container_name=tfstate" \
+          -backend-config="key=azure-vm.tfstate"
         terraform plan -out=tfplan
-      displayName: 'Terraform Init + Plan'
-      env:
-        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
-        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-        ARM_TENANT_ID: $(ARM_TENANT_ID)
+      displayName: 'Terraform Init & Plan'
 
-    - publish: $(System.DefaultWorkingDirectory)
-      artifact: drop
+    - publish: tfplan
+      artifact: plan
 
 - stage: Apply
-  condition: succeeded()
   dependsOn: Plan
+  condition: succeeded()
   jobs:
-  - job: TerraformApply
+  - job: Apply
     steps:
     - task: TerraformInstaller@0
       inputs:
         terraformVersion: $(terraformVersion)
 
+    - download: current
+      artifact: plan
+
     - script: |
-        terraform init -backend-config="storage_account_name=$(TF_STATE_ACCOUNT)" \
-                                 -backend-config="container_name=tfstate" \
-                                 -backend-config="key=azure-vm.tfstate"
+        terraform init \
+          -backend-config="storage_account_name=$(storageAccountName)" \
+          -backend-config="container_name=tfstate" \
+          -backend-config="key=azure-vm.tfstate"
         terraform apply -auto-approve tfplan
       displayName: 'Terraform Apply'
       env:
         ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
-        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_ID: $(ARM_CLIENT_SECRET_ID)
         ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
         ARM_TENANT_ID: $(ARM_TENANT_ID)
