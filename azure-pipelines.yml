@@ -4,42 +4,31 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
-variables:
-  STORAGE_ACCOUNT: 'tfstate73829'   # ← YOUR REAL STORAGE ACCOUNT NAME (no "29" typo)
-
 steps:
-# 1. Install Terraform
 - bash: |
     wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
     echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
     sudo apt update && sudo apt install terraform -y
   displayName: 'Install Terraform'
 
-# 2. OIDC login (this gives Terraform permission to create the VM)
 - task: AzureCLI@2
   displayName: 'OIDC Login'
   inputs:
     azureSubscription: 'azure-terraform-sp'
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
-    inlineScript: |
-      echo "OIDC login done – Terraform can create resources"
+    inlineScript: echo "OIDC ready"
 
-# 3. RUN TERRAFORM WITH LOCAL STATE ONLY (this is the nuclear fix)
 - bash: |
-    # Force local state – no backend = no auth problems
     terraform init -backend=false -reconfigure
-
     terraform plan -out=tfplan
-
     terraform apply -auto-approve tfplan
-  displayName: 'Create VM (local state – works 100%)'
+  displayName: 'Create VM (this time it WILL work)'
 
-# 4. Show the IP
 - bash: |
     echo ""
-    echo "YOUR VM IS LIVE!"
+    echo "VM CREATED!"
     echo "Public IP   : $(terraform output -raw public_ip)"
     echo "SSH command : ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
     echo ""
-  displayName: 'SHOW PUBLIC IP & SSH'
+  displayName: 'SHOW IP'

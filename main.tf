@@ -11,7 +11,9 @@ terraform {
       version = "~> 4.0"
     }
   }
+}
 
-  # ←←← DELETE OR COMMENT THESE 3 LINES ←←←
-  # backend "azurerm" {}
+# THIS IS THE ONLY PROVIDER BLOCK YOU NEED – OIDC handles everything
+provider "azurerm" {
+  features {}
 }
