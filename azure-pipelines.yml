@@ -5,7 +5,7 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  storageAccountName: 'tfstate73829'   # ← ONLY CHANGE THIS IF DIFFERENT
+  storageAccountName: 'tfstate73829'   # ← CHANGE ONLY IF YOURS IS DIFFERENT
 
 steps:
 # 1. Install Terraform
@@ -15,35 +15,35 @@ steps:
     sudo apt update && sudo apt install terraform -y
   displayName: 'Install Terraform'
 
-# 2. Login + EXPORT ARM variables correctly (this is the magic line)
+# 2. Login + force-export ARM variables (this is the magic that fixes everything)
 - task: AzureCLI@2
   displayName: 'Azure Login & Export ARM vars'
   inputs:
-    azureSubscription: 'azure-terraform-sp'   # ← your service connection name
+    azureSubscription: 'azure-terraform-sp'   # ← your exact service connection name
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
-    addSpnToEnvironment: true                 # ← exports servicePrincipalId/Key
+    addSpnToEnvironment: true
     inlineScript: |
       echo "Logged in as $(az account show --query user.name -o tsv)"
 
-      # THESE 4 LINES ARE CRITICAL – force Terraform to see the credentials
-      echo "##vso[task.setvariable variable=ARM_CLIENT_ID;issecret=false]$servicePrincipalId"
+      # THESE 4 LINES ARE THE KEY – they force Terraform to see real credentials
+      echo "##vso[task.setvariable variable=ARM_CLIENT_ID;issecret=true]$servicePrincipalId"
       echo "##vso[task.setvariable variable=ARM_CLIENT_SECRET;issecret=true]$servicePrincipalKey"
-      echo "##vso[task.setvariable variable=ARM_TENANT_ID;issecret=false]$tenantId"
-      echo "##vso[task.setvariable variable=ARM_SUBSCRIPTION_ID;issecret=false]$servicePrincipalSubscription"
+      echo "##vso[task.setvariable variable=ARM_TENANT_ID]$tenantId"
+      echo "##vso[task.setvariable variable=ARM_SUBSCRIPTION_ID]$servicePrincipalSubscription"
 
-# 3. Now Terraform works perfectly
+# 3. Terraform – now works perfectly
 - bash: |
     terraform init \
       -backend-config="resource_group_name=tf-win-rg" \
-      -backend-config="storage_account_name=$(storageAccount)" \
+      -backend-config="storage_account_name=$(storageAccountName)" \
       -backend-config="container_name=tfstate" \
       -backend-config="key=azure-vm.tfstate"
 
     terraform plan -out=tfplan
 
     terraform apply -auto-approve tfplan
-  displayName: 'Terraform Init → Plan → Apply'
+  displayName: 'Terraform Init → Plan → Apply (creates your VM)'
   env:
     ARM_CLIENT_ID: $(ARM_CLIENT_ID)
     ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
@@ -52,7 +52,7 @@ steps:
 
 # 4. Show the IP
 - bash: |
-    echo "VM CREATED SUCCESSFULLY!"
+    echo "YOUR UBUNTU VM IS READY!"
     echo "Public IP: $(terraform output -raw public_ip)"
-    echo "SSH: ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
+    echo "SSH command: ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
   displayName: 'Show Public IP & SSH Command'
