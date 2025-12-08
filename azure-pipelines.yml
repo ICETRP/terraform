@@ -5,53 +5,41 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  - name: terraformVersion
-    value: 'latest'
-  - name: storageAccountName
-    value: 'tfstate73829'   # ← CHANGE TO YOUR STORAGE NAME FROM STEP 5
+  storageAccountName: 'tfstate12345'   # ← CHANGE THIS TO YOUR REAL STORAGE ACCOUNT NAME
 
-stages:
-- stage: Plan
-  jobs:
-  - job: Plan
-    steps:
-    - task: TerraformInstaller@0
-      inputs:
-        terraformVersion: $(terraformVersion)
+steps:
+# Install Terraform
+- task: TerraformInstaller@5
+  inputs:
+    terraformVersion: 'latest'
 
-    - script: |
-        terraform init \
-          -backend-config="storage_account_name=$(storageAccountName)" \
-          -backend-config="container_name=tfstate" \
-          -backend-config="key=azure-vm.tfstate"
-        terraform plan -out=tfplan
-      displayName: 'Terraform Init & Plan'
+# Init with remote state (uses your service connection automatically)
+- task: TerraformCLI@5
+  displayName: 'Terraform Init'
+  inputs:
+    command: 'init'
+    workingDirectory: '$(System.DefaultWorkingDirectory)'
+    backendType: 'azurerm'
+    backendServiceArm: 'azure-terraform-sp'        # your service connection name
+    backendAzureRmResourceGroupName: 'tf-win-rg'
+    backendAzureRmStorageAccountName: '$(storageAccountName)'
+    backendAzureRmContainerName: 'tfstate'
+    backendAzureRmKey: 'azure-vm.tfstate'
 
-    - publish: tfplan
-      artifact: plan
+# Plan
+- task: TerraformCLI@5
+  displayName: 'Terraform Plan'
+  inputs:
+    command: 'plan'
+    workingDirectory: '$(System.DefaultWorkingDirectory)'
+    environmentServiceNameArm: 'azure-terraform-sp'
+    commandOptions: '-out=tfplan'
 
-- stage: Apply
-  dependsOn: Plan
-  condition: succeeded()
-  jobs:
-  - job: Apply
-    steps:
-    - task: TerraformInstaller@0
-      inputs:
-        terraformVersion: $(terraformVersion)
-
-    - download: current
-      artifact: plan
-
-    - script: |
-        terraform init \
-          -backend-config="storage_account_name=$(storageAccountName)" \
-          -backend-config="container_name=tfstate" \
-          -backend-config="key=azure-vm.tfstate"
-        terraform apply -auto-approve tfplan
-      displayName: 'Terraform Apply'
-      env:
-        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
-        ARM_CLIENT_ID: $(ARM_CLIENT_SECRET_ID)
-        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-        ARM_TENANT_ID: $(ARM_TENANT_ID)
+# Apply
+- task: TerraformCLI@5
+  displayName: 'Terraform Apply'
+  inputs:
+    command: 'apply'
+    workingDirectory: '$(System.DefaultWorkingDirectory)'
+    environmentServiceNameArm: 'azure-terraform-sp'
+    commandOptions: '-auto-approve tfplan'
