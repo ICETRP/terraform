@@ -5,39 +5,48 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  # ← CHANGE ONLY THIS ONE LINE TO YOUR REAL STORAGE ACCOUNT NAME
-  storageAccountName: 'tfstate73829'
+  storageAccountName: 'tfstate73829'   # ← YOUR REAL NAME ONLY
 
 steps:
-# 1. Install Terraform (official way)
+# Install Terraform
 - bash: |
     wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
     echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
     sudo apt update && sudo apt install terraform -y
   displayName: 'Install Terraform'
 
-# 2. Terraform Init + Plan + Apply – using the ONLY correct env vars in 2025
+# Terraform Init + Plan + Apply (all in separate steps so we see clear logs)
 - bash: |
     terraform init \
       -backend-config="resource_group_name=tf-win-rg" \
-      -backend-config="storage_account_name=$storageAccountName" \
+      -backend-config="storage_account_name=$(storageAccountName)" \
       -backend-config="container_name=tfstate" \
       -backend-config="key=azure-vm.tfstate"
-      
-    terraform plan -out=tfplan
-    
-    terraform apply -auto-approve tfplan
-  displayName: 'Terraform Init → Plan → Apply (creates VM)'
+  displayName: 'Terraform Init'
   env:
-    # ← THESE 4 lines are the only correct ones for service connection auth
-    ARM_CLIENT_ID:       $(azure-terraform-sp.applicationId)
-    ARM_CLIENT_SECRET:   $(azure-terraform-sp.secret)
-    ARM_TENANT_ID:       $(azure-terraform-sp.tenantId)
-    ARM_SUBSCRIPTION_ID: $(azure-terraform-sp.subscriptionId)
+    ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+    ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+    ARM_TENANT_ID: $(ARM_TENANT_ID)
+    ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
 
-# 3. Show the public IP
+- bash: terraform plan -out=tfplan
+  displayName: 'Terraform Plan'
+  env:
+    ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+    ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+    ARM_TENANT_ID: $(ARM_TENANT_ID)
+    ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+
+- bash: terraform apply -auto-approve tfplan
+  displayName: 'Terraform Apply – Creates your Ubuntu VM'
+  env:
+    ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+    ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+    ARM_TENANT_ID: $(ARM_TENANT_ID)
+    ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+
 - bash: |
-    echo "YOUR UBUNTU VM IS READY!"
-    echo "Public IP → $(terraform output -raw public_ip)"
-    echo "SSH command → ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
-  displayName: 'Show VM IP & SSH command'
+    echo "VM CREATED SUCCESSFULLY!"
+    echo "Public IP: $(terraform output -raw public_ip)"
+    echo "SSH: ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
+  displayName: 'Show Public IP & SSH Command'
