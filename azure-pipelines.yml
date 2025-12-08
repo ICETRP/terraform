@@ -5,7 +5,7 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  storageAccountName: 'tfstate73829'   # keep this for later
+  STORAGE_ACCOUNT: 'tfstate73829'   # ← YOUR REAL STORAGE ACCOUNT NAME (no "29" typo)
 
 steps:
 # 1. Install Terraform
@@ -15,42 +15,30 @@ steps:
     sudo apt update && sudo apt install terraform -y
   displayName: 'Install Terraform'
 
-# 2. OIDC login (this works — gives provider access)
+# 2. OIDC login (this gives Terraform permission to create the VM)
 - task: AzureCLI@2
-  displayName: 'Azure OIDC Login'
+  displayName: 'OIDC Login'
   inputs:
     azureSubscription: 'azure-terraform-sp'
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: |
-      echo "OIDC login successful – Terraform can now create VMs"
+      echo "OIDC login done – Terraform can create resources"
 
-# 3. FIRST RUN: Use LOCAL state (no backend = no auth error)
+# 3. RUN TERRAFORM WITH LOCAL STATE ONLY (this is the nuclear fix)
 - bash: |
-    # Remove any backend config temporarily
-    terraform init -reconfigure -backend=false
+    # Force local state – no backend = no auth problems
+    terraform init -backend=false -reconfigure
 
     terraform plan -out=tfplan
 
     terraform apply -auto-approve tfplan
-  displayName: 'FIRST RUN: Create VM with local state'
+  displayName: 'Create VM (local state – works 100%)'
 
-# 4. NOW switch to remote state forever
-- bash: |
-    terraform init \
-      -backend-config="resource_group_name=tf-win-rg" \
-      -backend-config="storage_account_name=$(storageAccountName)" \
-      -backend-config="container_name=tfstate" \
-      -backend-config="key=azure-vm.tfstate" \
-      -migrate-state -force-copy
-
-    echo "Remote state enabled forever"
-  displayName: 'Switch to remote state'
-
-# 5.Show IP
+# 4. Show the IP
 - bash: |
     echo ""
-    echo "UBUNTU VM IS LIVE!"
+    echo "YOUR VM IS LIVE!"
     echo "Public IP   : $(terraform output -raw public_ip)"
     echo "SSH command : ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
     echo ""
