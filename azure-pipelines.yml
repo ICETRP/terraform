@@ -5,74 +5,43 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  storageAccountName: 'tfstate73829'   # ← YOUR EXACT STORAGE ACCOUNT NAME HERE
+  # CHANGE THIS TO YOUR REAL STORAGE ACCOUNT NAME
+  storageAccountName: 'tfstate73829'
 
-stages:
-- stage: Terraform
-  displayName: 'Terraform: Init, Plan, Apply'
-  jobs:
-  - job: TerraformJob
-    steps:
-    # Install Terraform (official HashiCorp script – no extension needed)
-    - bash: |
-        wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
-        echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-        sudo apt update && sudo apt install terraform -y
-      displayName: 'Install Terraform'
+steps:
+# 1. Install Terraform
+- bash: |
+    wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
+    echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+    sudo apt update && sudo apt install terraform -y
+  displayName: 'Install Terraform'
 
-    # Authenticate to Azure & export ARM credentials (built-in task – always works)
-    - task: AzureCLI@2
-      displayName: 'Authenticate to Azure & Export Credentials'
-      inputs:
-        azureSubscription: 'azure-terraform-sp'  # Your service connection
-        scriptType: 'bash'
-        scriptLocation: 'inlineScript'
-        addSpnToEnvironment: true  # Exports ARM_CLIENT_ID, ARM_CLIENT_SECRET, etc.
-        inlineScript: |
-          # Force set vars for Terraform (fixes expansion issues)
-          echo "##vso[task.setvariable variable=ARM_CLIENT_ID;issecret=true]$servicePrincipalId"
-          echo "##vso[task.setvariable variable=ARM_CLIENT_SECRET;issecret=true]$servicePrincipalKey"
-          echo "##vso[task.setvariable variable=ARM_TENANT_ID]$tenantId"
-          echo "##vso[task.setvariable variable=ARM_SUBSCRIPTION_ID]$servicePrincipalSubscription"
-          echo "Auth successful – ARM vars exported"
+# 2. Login to Azure using your service connection (this fixes "Please run 'az login'")
+- task: AzureCLI@2
+  displayName: 'Azure Login'
+  inputs:
+    azureSubscription: 'azure-terraform-sp'   # Your service connection name
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      echo "Logged in as $(az account show --query user.name -o tsv)"
 
-    # Init with remote state (uses exported ARM vars – no literal expansion errors)
-    - bash: |
-        terraform init \
-          -backend-config="resource_group_name=tf-win-rg" \
-          -backend-config="storage_account_name=$(storageAccountName)" \
-          -backend-config="container_name=tfstate" \
-          -backend-config="key=azure-vm.tfstate"
-      displayName: 'Terraform Init'
-      env:
-        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-        ARM_TENANT_ID: $(ARM_TENANT_ID)
-        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+# 3. Terraform Init + Plan + Apply (now az cli is logged in, so backend works)
+- bash: |
+    terraform init \
+      -backend-config="resource_group_name=tf-win-rg" \
+      -backend-config="storage_account_name=$(storageAccountName)" \
+      -backend-config="container_name=tfstate" \
+      -backend-config="key=azure-vm.tfstate"
 
-    # Plan
-    - bash: terraform plan -out=tfplan
-      displayName: 'Terraform Plan'
-      env:
-        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-        ARM_TENANT_ID: $(ARM_TENANT_ID)
-        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+    terraform plan -out=tfplan
 
-    # Apply (only on main branch)
-    - bash: terraform apply -auto-approve tfplan
-      displayName: 'Terraform Apply – Creates Ubuntu VM'
-      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-      env:
-        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-        ARM_TENANT_ID: $(ARM_TENANT_ID)
-        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+    terraform apply -auto-approve tfplan
+  displayName: 'Terraform Init → Plan → Apply (Creates VM)'
 
-    # Show outputs (no auth needed)
-    - bash: |
-        echo "SUCCESS! VM CREATED/UPDATED"
-        echo "Public IP: $(terraform output -raw public_ip || echo 'Check Azure portal')"
-        echo "SSH: ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip || echo '<IP>')"
-      displayName: 'Show VM Public IP & SSH Command'
-      condition: succeeded()
+# 4. Show public IP
+- bash: |
+    echo "YOUR UBUNTU VM IS READY!"
+    echo "Public IP: $(terraform output -raw public_ip)"
+    echo "SSH command: ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
+  displayName: 'Show Public IP & SSH'
