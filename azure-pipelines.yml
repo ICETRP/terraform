@@ -20,10 +20,10 @@ steps:
     inlineScript: echo "OIDC ready"
 
 - bash: |
-    terraform init -backend=false -reconfigure
+    terraform init -backend=false -reconfigure -force-copy
     terraform plan -out=tfplan
     terraform apply -auto-approve tfplan
-  displayName: 'Create VM (this time it WILL work)'
+  displayName: 'Create VM'
 
 - bash: |
     echo ""
