@@ -5,41 +5,53 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  storageAccountName: 'tfstate12345'   # ← CHANGE THIS TO YOUR REAL STORAGE ACCOUNT NAME
+  storageAccountName: 'YOUR-STORAGE-ACCOUNT-NAME'  # e.g., tfstate73829 – CHANGE THIS!
 
 steps:
-# Install Terraform
-- task: TerraformInstaller@5
-  inputs:
-    terraformVersion: 'latest'
+# Step 1: Install Terraform (no extension needed)
+- script: |
+    # Install Chocolatey (package manager)
+    curl -fsSL https://getchocolatey.org/install.ps1 | powershell -ExecutionPolicy ByPass
+    # Install Terraform latest
+    choco install terraform -y
+    # Add to PATH
+    echo "##vso[task.prependpath]$env:ChocolateyInstall/bin"
+  displayName: 'Install Terraform'
 
-# Init with remote state (uses your service connection automatically)
-- task: TerraformCLI@5
+# Step 2: Terraform Init with remote state (uses service connection for auth)
+- script: |
+    terraform init \
+      -backend-config="resource_group_name=tf-win-rg" \
+      -backend-config="storage_account_name=$(storageAccountName)" \
+      -backend-config="container_name=tfstate" \
+      -backend-config="key=azure-vm.tfstate"
   displayName: 'Terraform Init'
-  inputs:
-    command: 'init'
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
-    backendType: 'azurerm'
-    backendServiceArm: 'azure-terraform-sp'        # your service connection name
-    backendAzureRmResourceGroupName: 'tf-win-rg'
-    backendAzureRmStorageAccountName: '$(storageAccountName)'
-    backendAzureRmContainerName: 'tfstate'
-    backendAzureRmKey: 'azure-vm.tfstate'
+  env:
+    ARM_SUBSCRIPTION_ID: $(azure-terraform-sp.subscriptionId)
+    ARM_CLIENT_ID: $(azure-terraform-sp.clientId)
+    ARM_CLIENT_SECRET: $(azure-terraform-sp.clientSecret)
+    ARM_TENANT_ID: $(azure-terraform-sp.tenantId)
 
-# Plan
-- task: TerraformCLI@5
+# Step 3: Terraform Plan
+- script: terraform plan -out=tfplan
   displayName: 'Terraform Plan'
-  inputs:
-    command: 'plan'
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
-    environmentServiceNameArm: 'azure-terraform-sp'
-    commandOptions: '-out=tfplan'
+  env:
+    ARM_SUBSCRIPTION_ID: $(azure-terraform-sp.subscriptionId)
+    ARM_CLIENT_ID: $(azure-terraform-sp.clientId)
+    ARM_CLIENT_SECRET: $(azure-terraform-sp.clientSecret)
+    ARM_TENANT_ID: $(azure-terraform-sp.tenantId)
 
-# Apply
-- task: TerraformCLI@5
+# Step 4: Publish plan as artifact (for manual review if needed)
+- publish: tfplan
+  artifact: plan-artifact
+  displayName: 'Publish Plan Artifact'
+
+# Step 5: Terraform Apply (only on main branch – auto-approve)
+- script: terraform apply -auto-approve tfplan
   displayName: 'Terraform Apply'
-  inputs:
-    command: 'apply'
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
-    environmentServiceNameArm: 'azure-terraform-sp'
-    commandOptions: '-auto-approve tfplan'
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  env:
+    ARM_SUBSCRIPTION_ID: $(azure-terraform-sp.subscriptionId)
+    ARM_CLIENT_ID: $(azure-terraform-sp.clientId)
+    ARM_CLIENT_SECRET: $(azure-terraform-sp.clientSecret)
+    ARM_TENANT_ID: $(azure-terraform-sp.tenantId)
