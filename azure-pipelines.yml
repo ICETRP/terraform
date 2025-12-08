@@ -5,7 +5,7 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  storageAccountName: 'tfstate73829'   # ← YOUR REAL NAME ONLY
+  storageAccountName: 'tfstate73829'   # ← YOUR REAL STORAGE ACCOUNT NAME
 
 steps:
 # Install Terraform
@@ -15,7 +15,7 @@ steps:
     sudo apt update && sudo apt install terraform -y
   displayName: 'Install Terraform'
 
-# Terraform Init + Plan + Apply (all in separate steps so we see clear logs)
+# Terraform Init – now ARM_* variables are injected automatically
 - bash: |
     terraform init \
       -backend-config="resource_group_name=tf-win-rg" \
@@ -23,30 +23,17 @@ steps:
       -backend-config="container_name=tfstate" \
       -backend-config="key=azure-vm.tfstate"
   displayName: 'Terraform Init'
-  env:
-    ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-    ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-    ARM_TENANT_ID: $(ARM_TENANT_ID)
-    ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
 
+# Plan + Apply
 - bash: terraform plan -out=tfplan
   displayName: 'Terraform Plan'
-  env:
-    ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-    ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-    ARM_TENANT_ID: $(ARM_TENANT_ID)
-    ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
 
 - bash: terraform apply -auto-approve tfplan
   displayName: 'Terraform Apply – Creates your Ubuntu VM'
-  env:
-    ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-    ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-    ARM_TENANT_ID: $(ARM_TENANT_ID)
-    ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
 
+# Show IP
 - bash: |
-    echo "VM CREATED SUCCESSFULLY!"
+    echo "SUCCESS! YOUR VM IS READY"
     echo "Public IP: $(terraform output -raw public_ip)"
     echo "SSH: ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip)"
   displayName: 'Show Public IP & SSH Command'
