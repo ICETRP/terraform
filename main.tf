@@ -12,5 +12,6 @@ terraform {
     }
   }
 
-  backend "azurerm" {}  # Pipeline configures this
+  # ←←← DELETE OR COMMENT THESE 3 LINES ←←←
+  # backend "azurerm" {}
 }
