@@ -4,11 +4,11 @@ terraform {
     azurerm = { source = "hashicorp/azurerm"; version = "~> 4.0" }
     tls = { source = "hashicorp/tls"; version = "~> 4.0" }
   }
-  backend "azurerm" {}  # Empty – pipeline fills it
+  backend "azurerm" {}  # Pipeline configures this
 }
 
 provider "azurerm" {
   features {}
 }
 
-# ... rest of your VM resources unchanged ...
+# ... your VM resources unchanged ...
