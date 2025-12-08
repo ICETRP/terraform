@@ -5,7 +5,7 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  storageAccountName: 'tfstate73829'   # ← YOUR EXACT STORAGE ACCOUNT NAME
+  storageAccountName: 'tfstate73829'   # ← YOUR EXACT STORAGE ACCOUNT NAME HERE
 
 stages:
 - stage: Terraform
@@ -13,14 +13,14 @@ stages:
   jobs:
   - job: TerraformJob
     steps:
-    # Install Terraform using the official task (no manual bash needed)
-    - task: TerraformInstaller@5
+    # Install Terraform – use @1 (latest stable for installer)
+    - task: ms-devlabs.custom-terraform-tasks.TerraformInstaller@1
       displayName: 'Install Terraform'
       inputs:
         terraformVersion: 'latest'
 
     # Init with remote state – auth via service connection
-    - task: TerraformTaskV4@4
+    - task: ms-devlabs.custom-terraform-tasks.TerraformTaskV4@4
       displayName: 'Terraform Init'
       inputs:
         provider: 'azurerm'
@@ -34,7 +34,7 @@ stages:
         backendAzureRmKey: 'azure-vm.tfstate'
 
     # Plan – auth via service connection
-    - task: TerraformTaskV4@4
+    - task: ms-devlabs.custom-terraform-tasks.TerraformTaskV4@4
       displayName: 'Terraform Plan'
       inputs:
         provider: 'azurerm'
@@ -44,7 +44,7 @@ stages:
         commandOptions: '-out=tfplan'
 
     # Apply – auth via service connection (only on main branch)
-    - task: TerraformTaskV4@4
+    - task: ms-devlabs.custom-terraform-tasks.TerraformTaskV4@4
       displayName: 'Terraform Apply – Creates Ubuntu VM'
       inputs:
         provider: 'azurerm'
