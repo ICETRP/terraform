@@ -1,174 +1,83 @@
-# azure-pipelines.yml
+# azure-pipelines.yml - SIMPLE VERSION (NO EXTENSIONS)
 trigger:
-  branches:
-    include:
-      - main
-      - master
+  - main
 
-variables:
-  - name: subscriptionId
-    value: 'f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163'
-  - name: tenantId
-    value: 'c872c2b0-012f-4d75-a07b-7a6fd47d6066'
-  - name: location
-    value: 'eastus'
-  - name: resourceGroupName
-    value: 'ubuntu-vm-rg'
-  - name: vmName
-    value: 'ubuntu-vm'
-  - name: vmSize
-    value: 'Standard_B2s'
+pool:
+  vmImage: 'ubuntu-latest'
 
-stages:
-- stage: DeployUbuntuVM
-  displayName: 'Deploy Ubuntu VM'
-  jobs:
-  - job: Deploy
-    displayName: 'Deploy Ubuntu 22.04 VM'
-    pool:
-      vmImage: 'ubuntu-latest'
+steps:
+# Step 1: Checkout
+- checkout: self
+  displayName: 'Checkout Code'
+
+# Step 2: Install Tools
+- bash: |
+    echo "=== Installing Tools ==="
     
-    steps:
-    # Step 1: Checkout code
-    - checkout: self
-      displayName: 'Checkout Code'
+    # Install Terraform
+    wget -q https://releases.hashicorp.com/terraform/1.9.0/terraform_1.9.0_linux_amd64.zip
+    unzip terraform_1.9.0_linux_amd64.zip
+    sudo mv terraform /usr/local/bin/
+    terraform version
     
-    # Step 2: Install Terraform
-    - task: TerraformInstaller@1
-      displayName: 'Install Terraform 1.9.0'
-      inputs:
-        terraformVersion: '1.9.0'
+    # Install Azure CLI
+    curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+    az version
+  displayName: 'Install Terraform and Azure CLI'
+
+# Step 3: Azure Login
+- task: AzureCLI@2
+  displayName: 'Login to Azure'
+  inputs:
+    azureSubscription: 'Azure Connection'
+    scriptType: 'bash'
+    inlineScript: |
+      echo "Using subscription: f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163"
+      echo "Using tenant: c872c2b0-012f-4d75-a07b-7a6fd47d6066"
+      az account show
+
+# Step 4: Run Terraform
+- bash: |
+    echo "=== Terraform Init ==="
+    terraform init
     
-    # Step 3: Azure CLI Login
-    - task: AzureCLI@2
-      displayName: 'Azure CLI Login'
-      inputs:
-        azureSubscription: 'Azure Connection'  # Will create in next step
-        scriptType: 'bash'
-        scriptLocation: 'inlineScript'
-        inlineScript: |
-          echo "======================================="
-          echo "Azure Login Successful"
-          echo "Subscription: $(subscriptionId)"
-          echo "Tenant: $(tenantId)"
-          echo "======================================="
-          
-          az account show
-          
-          # Set environment variables for Terraform
-          echo "##vso[task.setvariable variable=ARM_SUBSCRIPTION_ID]$(subscriptionId)"
-          echo "##vso[task.setvariable variable=ARM_TENANT_ID]$(tenantId)"
+    echo "=== Terraform Plan ==="
+    terraform plan \
+      -var="subscription_id=f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163" \
+      -var="tenant_id=c872c2b0-012f-4d75-a07b-7a6fd47d6066" \
+      -var="resource_group_name=ubuntu-vm-rg" \
+      -var="location=eastus" \
+      -var="vm_name=ubuntu-vm"
     
-    # Step 4: Terraform Initialize
-    - task: TerraformTaskV4@4
-      displayName: 'Terraform Init'
-      inputs:
-        provider: 'azurerm'
-        command: 'init'
-        workingDirectory: '$(System.DefaultWorkingDirectory)'
-        commandOptions: '-upgrade'
+    echo "=== Terraform Apply ==="
+    terraform apply \
+      -auto-approve \
+      -var="subscription_id=f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163" \
+      -var="tenant_id=c872c2b0-012f-4d75-a07b-7a6fd47d6066" \
+      -var="resource_group_name=ubuntu-vm-rg" \
+      -var="location=eastus" \
+      -var="vm_name=ubuntu-vm"
+  displayName: 'Run Terraform Commands'
+
+# Step 5: Show Outputs
+- bash: |
+    echo "=== DEPLOYMENT COMPLETE ==="
+    echo ""
+    echo "📱 VM INFORMATION:"
+    terraform output
     
-    # Step 5: Terraform Plan
-    - task: TerraformTaskV4@4
-      displayName: 'Terraform Plan'
-      inputs:
-        provider: 'azurerm'
-        command: 'plan'
-        workingDirectory: '$(System.DefaultWorkingDirectory)'
-        environmentServiceNameAzureRM: 'Azure Connection'
-        commandOptions: |
-          -var="subscription_id=$(subscriptionId)"
-          -var="tenant_id=$(tenantId)"
-          -var="resource_group_name=$(resourceGroupName)"
-          -var="location=$(location)"
-          -var="vm_name=$(vmName)"
-          -var="vm_size=$(vmSize)"
-          -out=tfplan
-    
-    # Step 6: Terraform Apply
-    - task: TerraformTaskV4@4
-      displayName: 'Terraform Apply'
-      inputs:
-        provider: 'azurerm'
-        command: 'apply'
-        workingDirectory: '$(System.DefaultWorkingDirectory)'
-        environmentServiceNameAzureRM: 'Azure Connection'
-        commandOptions: |
-          -auto-approve
-          -var="subscription_id=$(subscriptionId)"
-          -var="tenant_id=$(tenantId)"
-          -var="resource_group_name=$(resourceGroupName)"
-          -var="location=$(location)"
-          -var="vm_name=$(vmName)"
-          -var="vm_size=$(vmSize)"
-    
-    # Step 7: Get Terraform Outputs
-    - task: TerraformTaskV4@4
-      displayName: 'Terraform Output'
-      inputs:
-        provider: 'azurerm'
-        command: 'output'
-        workingDirectory: '$(System.DefaultWorkingDirectory)'
-        environmentServiceNameAzureRM: 'Azure Connection'
-    
-    # Step 8: Save SSH Key as Pipeline Artifact
-    - task: CopyFiles@2
-      displayName: 'Copy SSH Key'
-      inputs:
-        Contents: 'azure-key.pem'
-        TargetFolder: '$(Build.ArtifactStagingDirectory)'
-        CleanTargetFolder: true
-        OverWrite: true
-    
-    - task: PublishPipelineArtifact@1
-      displayName: 'Publish SSH Key Artifact'
-      inputs:
-        targetPath: '$(Build.ArtifactStagingDirectory)'
-        artifact: 'ssh-key'
-        publishLocation: 'pipeline'
-    
-    # Step 9: Display Connection Information
-    - task: Bash@3
-      displayName: 'Display VM Connection Details'
-      inputs:
-        targetType: 'inline'
-        script: |
-          echo "=============================================="
-          echo "🚀 UBUNTU VM DEPLOYMENT COMPLETE!"
-          echo "=============================================="
-          echo ""
-          echo "📋 VM DETAILS:"
-          echo "   • VM Name: $(vmName)"
-          echo "   • Resource Group: $(resourceGroupName)"
-          echo "   • Location: $(location)"
-          echo "   • VM Size: $(vmSize)"
-          echo ""
-          echo "🔗 CONNECTION INSTRUCTIONS:"
-          echo "   1. SSH Key downloaded as pipeline artifact"
-          echo "   2. SSH Command:"
-          echo "      ssh -i azure-key.pem azureuser@[PUBLIC_IP]"
-          echo ""
-          echo "📡 SERVICES INSTALLED:"
-          echo "   • Nginx web server (port 80)"
-          echo ""
-          echo "⚠️  SECURITY NOTES:"
-          echo "   • SSH key is stored in pipeline artifacts"
-          echo "   • SSH port 22 is open to all IPs"
-          echo "   • Change NSG rules for production use"
-          echo "=============================================="
-    
-    # Step 10: Test SSH Connection (Optional)
-    - task: Bash@3
-      displayName: 'Test SSH Connection (Optional)'
-      inputs:
-        targetType: 'inline'
-        script: |
-          echo "Testing if SSH key was generated..."
-          if [ -f "azure-key.pem" ]; then
-            echo "✅ SSH key found at: $(pwd)/azure-key.pem"
-            chmod 600 azure-key.pem
-            echo "✅ SSH key permissions set to 600"
-          else
-            echo "❌ SSH key not found!"
-          fi
-      enabled: false  # Set to true to enable SSH test
+    if [ -f "azure-key.pem" ]; then
+      echo ""
+      echo "🔐 SSH KEY:"
+      echo "Private key saved as: azure-key.pem"
+      chmod 600 azure-key.pem
+    fi
+  displayName: 'Display Results'
+
+# Step 6: Save SSH Key
+- task: PublishPipelineArtifact@1
+  displayName: 'Save SSH Key as Artifact'
+  inputs:
+    targetPath: '$(System.DefaultWorkingDirectory)/azure-key.pem'
+    artifact: 'ssh-key'
+    publishLocation: 'pipeline'
