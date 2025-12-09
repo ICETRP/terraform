@@ -1,7 +1,6 @@
-# main.tf
+# main.tf - SIMPLIFIED
 terraform {
-  required_version = ">= 1.9.0"
-
+  required_version = ">= 1.0.0"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -14,45 +13,25 @@ terraform {
   }
 }
 
+# Use environment variables for authentication
 provider "azurerm" {
   features {}
-  
-  subscription_id = var.subscription_id
-  tenant_id       = var.tenant_id
-  use_cli         = true
+  # These will come from environment variables set by pipeline
+  # ARM_SUBSCRIPTION_ID and ARM_TENANT_ID
+  use_cli = true
 }
 
-variable "subscription_id" {
-  type = string
-}
-
-variable "tenant_id" {
-  type = string
-}
-
+# Variables with defaults - no required values
 variable "resource_group_name" {
-  type    = string
   default = "ubuntu-vm-rg"
 }
 
 variable "location" {
-  type    = string
   default = "eastus"
 }
 
 variable "vm_name" {
-  type    = string
   default = "ubuntu-vm"
-}
-
-variable "vm_size" {
-  type    = string
-  default = "Standard_B2s"
-}
-
-variable "admin_username" {
-  type    = string
-  default = "azureuser"
 }
 
 # Resource Group
@@ -63,7 +42,7 @@ resource "azurerm_resource_group" "rg" {
 
 # Network Security Group
 resource "azurerm_network_security_group" "nsg" {
-  name                = "${var.vm_name}-nsg"
+  name                = "ubuntu-nsg"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
@@ -82,15 +61,14 @@ resource "azurerm_network_security_group" "nsg" {
 
 # Virtual Network
 resource "azurerm_virtual_network" "vnet" {
-  name                = "${var.vm_name}-vnet"
+  name                = "ubuntu-vnet"
   address_space       = ["10.0.0.0/16"]
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 }
 
-# Subnet
 resource "azurerm_subnet" "subnet" {
-  name                 = "${var.vm_name}-subnet"
+  name                 = "ubuntu-subnet"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.1.0/24"]
@@ -103,7 +81,7 @@ resource "azurerm_subnet_network_security_group_association" "nsg_assoc" {
 
 # Public IP
 resource "azurerm_public_ip" "pip" {
-  name                = "${var.vm_name}-pip"
+  name                = "ubuntu-pip"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   allocation_method   = "Static"
@@ -112,7 +90,7 @@ resource "azurerm_public_ip" "pip" {
 
 # Network Interface
 resource "azurerm_network_interface" "nic" {
-  name                = "${var.vm_name}-nic"
+  name                = "ubuntu-nic"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
@@ -141,14 +119,14 @@ resource "azurerm_linux_virtual_machine" "vm" {
   name                = var.vm_name
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
-  size                = var.vm_size
-  admin_username      = var.admin_username
+  size                = "Standard_B2s"
+  admin_username      = "azureuser"
   network_interface_ids = [azurerm_network_interface.nic.id]
 
   disable_password_authentication = true
 
   admin_ssh_key {
-    username   = var.admin_username
+    username   = "azureuser"
     public_key = tls_private_key.ssh_key.public_key_openssh
   }
 
@@ -168,10 +146,6 @@ resource "azurerm_linux_virtual_machine" "vm" {
 # Outputs
 output "public_ip_address" {
   value = azurerm_public_ip.pip.ip_address
-}
-
-output "admin_username" {
-  value = azurerm_linux_virtual_machine.vm.admin_username
 }
 
 output "ssh_command" {
