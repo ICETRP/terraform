@@ -11,8 +11,8 @@ steps:
   displayName: 'Checkout Code'
 
 # Step 2: Install Tools
-- script: |
-    echo "=== Installing Terraform and Azure CLI ==="
+- bash: |
+    echo "=== Installing Tools ==="
     
     # Install Terraform
     wget -q https://releases.hashicorp.com/terraform/1.9.0/terraform_1.9.0_linux_amd64.zip
@@ -20,15 +20,14 @@ steps:
     sudo mv terraform /usr/local/bin/
     terraform version
     
-    # Azure CLI is already installed on Microsoft-hosted agents
-    az --version
-  displayName: 'Install Tools'
+    echo "=== Tools Installed ==="
+  displayName: 'Install Terraform'
 
-# Step 3: Run ALL Terraform commands in ONE Azure CLI task
+# Step 3: Run Terraform in Azure CLI Context (CRITICAL!)
 - task: AzureCLI@2
-  displayName: 'Azure Login & Run Terraform'
+  displayName: 'Azure Login & Terraform Deploy'
   inputs:
-    azureSubscription: 'Azure Connection'  # Make sure this exists
+    azureSubscription: 'Azure Connection'
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: |
@@ -36,25 +35,12 @@ steps:
       echo "Azure Login Successful!"
       echo "========================================"
       
-      # Show Azure account info
+      # Show Azure account
       az account show
       
-      echo ""
-      echo "=== Setting Terraform Environment Variables ==="
-      
-      # Set environment variables for Terraform
-      export ARM_SUBSCRIPTION_ID="f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163"
-      export ARM_TENANT_ID="c872c2b0-012f-4d75-a07b-7a6fd47d6066"
-      export ARM_USE_CLI="true"
-      
-      echo "ARM_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID"
-      echo "ARM_TENANT_ID=$ARM_TENANT_ID"
-      
-      echo ""
-      echo "=== Cleaning up previous Terraform state ==="
+      # Clean previous state
       rm -rf .terraform
       rm -f terraform.tfstate*
-      rm -f azure-key.pem
       
       echo ""
       echo "=== Terraform Init ==="
@@ -62,61 +48,84 @@ steps:
       
       echo ""
       echo "=== Terraform Plan ==="
-      terraform plan \
-        -var="subscription_id=f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163" \
-        -var="tenant_id=c872c2b0-012f-4d75-a07b-7a6fd47d6066"
+      terraform plan
       
       echo ""
       echo "=== Terraform Apply ==="
-      terraform apply \
-        -auto-approve \
-        -var="subscription_id=f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163" \
-        -var="tenant_id=c872c2b0-012f-4d75-a07b-7a6fd47d6066"
+      terraform apply -auto-approve
       
       echo ""
       echo "=== Terraform Outputs ==="
       terraform output
       
-      echo ""
-      echo "=== SSH Key Generated ==="
-      if [ -f "azure-key.pem" ]; then
-        echo "SSH key saved as: azure-key.pem"
-        chmod 600 azure-key.pem
-        ls -la azure-key.pem
+      # Copy SSH key from /tmp to workspace
+      if [ -f "/tmp/azure-key.pem" ]; then
+        echo "Copying SSH key from /tmp to workspace..."
+        cp /tmp/azure-key.pem $(Build.SourcesDirectory)/azure-key.pem
+        chmod 600 $(Build.SourcesDirectory)/azure-key.pem
+        echo "SSH key copied to workspace"
+      else
+        echo "WARNING: SSH key not found in /tmp"
+        # Try to find it
+        find / -name "azure-key.pem" 2>/dev/null || echo "SSH key not found anywhere"
       fi
       
       echo "========================================"
-      echo "✅ DEPLOYMENT COMPLETE!"
+      echo "✅ VM DEPLOYMENT COMPLETE!"
       echo "========================================"
 
-# Step 4: Save SSH Key as Artifact
+# Step 4: Verify and Save SSH Key
+- bash: |
+    echo "=== Verifying SSH Key ==="
+    echo "Current directory: $(pwd)"
+    echo "Files in directory:"
+    ls -la
+    
+    echo ""
+    echo "Looking for SSH key..."
+    if [ -f "azure-key.pem" ]; then
+      echo "✅ SSH key found: azure-key.pem"
+      echo "File size: $(stat -c%s azure-key.pem) bytes"
+      echo "Permissions:"
+      ls -la azure-key.pem
+      
+      # Set correct permissions
+      chmod 600 azure-key.pem
+      
+      # Copy to a known location
+      cp azure-key.pem $(Build.ArtifactStagingDirectory)/azure-key.pem
+      echo "SSH key copied to artifact staging"
+    else
+      echo "❌ ERROR: azure-key.pem not found in workspace!"
+      echo "Creating a dummy file for debugging..."
+      echo "dummy-key" > azure-key.pem
+      chmod 600 azure-key.pem
+    fi
+  displayName: 'Verify SSH Key'
+
+# Step 5: Save Artifact
 - task: PublishPipelineArtifact@1
-  displayName: 'Save SSH Key'
+  displayName: 'Publish SSH Key'
   inputs:
-    targetPath: '$(System.DefaultWorkingDirectory)/azure-key.pem'
+    targetPath: '$(Build.ArtifactStagingDirectory)'
     artifact: 'ssh-key'
     publishLocation: 'pipeline'
 
-# Step 5: Display Connection Info
-- script: |
+# Step 6: Display Results
+- bash: |
     echo "=============================================="
     echo "🚀 UBUNTU VM DEPLOYMENT COMPLETE!"
     echo "=============================================="
     echo ""
-    echo "📋 VM DETAILS:"
-    echo "   • VM Name: ubuntu-vm"
-    echo "   • Resource Group: ubuntu-vm-rg"
-    echo "   • Location: eastus"
-    echo ""
-    echo "🔗 CONNECTION INSTRUCTIONS:"
-    echo "   1. Download SSH key from pipeline artifacts"
-    echo "   2. Run: chmod 600 azure-key.pem"
-    echo "   3. Run: ssh -i azure-key.pem azureuser@[PUBLIC_IP]"
-    echo ""
-    echo "📡 To get the public IP, check Terraform outputs above"
+    echo "📋 NEXT STEPS:"
+    echo "1. Download 'ssh-key' artifact from pipeline"
+    echo "2. Extract azure-key.pem from the artifact"
+    echo "3. Set permissions: chmod 600 azure-key.pem"
+    echo "4. Get public IP from Terraform outputs above"
+    echo "5. Connect: ssh -i azure-key.pem azureuser@[PUBLIC_IP]"
     echo ""
     echo "⚠️  SECURITY NOTE:"
-    echo "   • SSH port 22 is open to all IPs"
-    echo "   • Download and delete SSH key after use"
+    echo "• SSH port 22 is open to all IPs"
+    echo "• Delete SSH key after use"
     echo "=============================================="
   displayName: 'Display Connection Info'

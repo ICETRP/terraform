@@ -1,4 +1,4 @@
-# main.tf - SIMPLIFIED WORKING VERSION
+# main.tf - Ubuntu VM Deployment
 terraform {
   required_version = ">= 1.0.0"
   required_providers {
@@ -13,37 +13,22 @@ terraform {
   }
 }
 
-# Provider uses environment variables OR explicit values
+# Provider Configuration
 provider "azurerm" {
   features {}
   
-  # Option 1: Use environment variables (ARM_SUBSCRIPTION_ID, ARM_TENANT_ID)
-  # Option 2: Use explicit values below
-  
+  # Hardcode your values - NO variables needed
   subscription_id = "f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163"
   tenant_id       = "c872c2b0-012f-4d75-a07b-7a6fd47d6066"
   
-  # Use Azure CLI authentication
+  # Use Azure CLI for authentication
   use_cli = true
-}
-
-# Variables (optional - you can hardcode if you want)
-variable "resource_group_name" {
-  default = "ubuntu-vm-rg"
-}
-
-variable "location" {
-  default = "eastus"
-}
-
-variable "vm_name" {
-  default = "ubuntu-vm"
 }
 
 # Resource Group
 resource "azurerm_resource_group" "rg" {
-  name     = var.resource_group_name
-  location = var.location
+  name     = "ubuntu-vm-rg"
+  location = "eastus"
 }
 
 # Network Security Group
@@ -116,16 +101,16 @@ resource "tls_private_key" "ssh_key" {
   rsa_bits  = 4096
 }
 
-# Save SSH Key
+# Save SSH Key to file - Use ABSOLUTE PATH
 resource "local_file" "private_key" {
   content         = tls_private_key.ssh_key.private_key_pem
-  filename        = "azure-key.pem"
+  filename        = "/tmp/azure-key.pem"  # ABSOLUTE PATH
   file_permission = "0600"
 }
 
 # Ubuntu VM
 resource "azurerm_linux_virtual_machine" "vm" {
-  name                = var.vm_name
+  name                = "ubuntu-vm"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   size                = "Standard_B2s"
