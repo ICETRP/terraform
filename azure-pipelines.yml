@@ -1,4 +1,4 @@
-# azure-pipelines.yml - SIMPLEST WORKING VERSION
+# azure-pipelines.yml - WORKING VERSION
 trigger:
   - main
 
@@ -8,40 +8,115 @@ pool:
 steps:
 # Step 1: Checkout
 - checkout: self
+  displayName: 'Checkout Code'
 
 # Step 2: Install Tools
 - script: |
-    # Install Terraform
-    wget https://releases.hashicorp.com/terraform/1.9.0/terraform_1.9.0_linux_amd64.zip
-    unzip terraform_1.9.0_linux_amd64.zip
-    sudo mv terraform /usr/local/bin/
+    echo "=== Installing Terraform and Azure CLI ==="
     
-    # Install Azure CLI
-    curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+    # Install Terraform
+    wget -q https://releases.hashicorp.com/terraform/1.9.0/terraform_1.9.0_linux_amd64.zip
+    unzip -o terraform_1.9.0_linux_amd64.zip
+    sudo mv terraform /usr/local/bin/
+    terraform version
+    
+    # Azure CLI is already installed on Microsoft-hosted agents
+    az --version
   displayName: 'Install Tools'
 
-# Step 3: Login to Azure - SIMPLIFIED
+# Step 3: Run ALL Terraform commands in ONE Azure CLI task
 - task: AzureCLI@2
+  displayName: 'Azure Login & Run Terraform'
   inputs:
-    azureSubscription: 'Azure Connection'
+    azureSubscription: 'Azure Connection'  # Make sure this exists
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
-    inlineScript: 'az account show'
-  displayName: 'Azure Login'
+    inlineScript: |
+      echo "========================================"
+      echo "Azure Login Successful!"
+      echo "========================================"
+      
+      # Show Azure account info
+      az account show
+      
+      echo ""
+      echo "=== Setting Terraform Environment Variables ==="
+      
+      # Set environment variables for Terraform
+      export ARM_SUBSCRIPTION_ID="f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163"
+      export ARM_TENANT_ID="c872c2b0-012f-4d75-a07b-7a6fd47d6066"
+      export ARM_USE_CLI="true"
+      
+      echo "ARM_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID"
+      echo "ARM_TENANT_ID=$ARM_TENANT_ID"
+      
+      echo ""
+      echo "=== Cleaning up previous Terraform state ==="
+      rm -rf .terraform
+      rm -f terraform.tfstate*
+      rm -f azure-key.pem
+      
+      echo ""
+      echo "=== Terraform Init ==="
+      terraform init
+      
+      echo ""
+      echo "=== Terraform Plan ==="
+      terraform plan \
+        -var="subscription_id=f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163" \
+        -var="tenant_id=c872c2b0-012f-4d75-a07b-7a6fd47d6066"
+      
+      echo ""
+      echo "=== Terraform Apply ==="
+      terraform apply \
+        -auto-approve \
+        -var="subscription_id=f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163" \
+        -var="tenant_id=c872c2b0-012f-4d75-a07b-7a6fd47d6066"
+      
+      echo ""
+      echo "=== Terraform Outputs ==="
+      terraform output
+      
+      echo ""
+      echo "=== SSH Key Generated ==="
+      if [ -f "azure-key.pem" ]; then
+        echo "SSH key saved as: azure-key.pem"
+        chmod 600 azure-key.pem
+        ls -la azure-key.pem
+      fi
+      
+      echo "========================================"
+      echo "✅ DEPLOYMENT COMPLETE!"
+      echo "========================================"
 
-# Step 4: Run Terraform
-- script: |
-    terraform init
-    terraform plan
-    terraform apply -auto-approve
-  displayName: 'Run Terraform'
-  env:
-    ARM_SUBSCRIPTION_ID: 'f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163'
-    ARM_TENANT_ID: 'c872c2b0-012f-4d75-a07b-7a6fd47d6066'
+# Step 4: Save SSH Key as Artifact
+- task: PublishPipelineArtifact@1
+  displayName: 'Save SSH Key'
+  inputs:
+    targetPath: '$(System.DefaultWorkingDirectory)/azure-key.pem'
+    artifact: 'ssh-key'
+    publishLocation: 'pipeline'
 
-# Step 5: Show Results
+# Step 5: Display Connection Info
 - script: |
-    echo "=== DEPLOYMENT COMPLETE ==="
-    echo "Public IP: $(terraform output -raw public_ip_address 2>/dev/null || echo 'Check terraform output')"
-    echo "SSH Command: ssh -i azure-key.pem azureuser@$(terraform output -raw public_ip_address 2>/dev/null || echo 'IP_NOT_FOUND')"
-  displayName: 'Show Results'
+    echo "=============================================="
+    echo "🚀 UBUNTU VM DEPLOYMENT COMPLETE!"
+    echo "=============================================="
+    echo ""
+    echo "📋 VM DETAILS:"
+    echo "   • VM Name: ubuntu-vm"
+    echo "   • Resource Group: ubuntu-vm-rg"
+    echo "   • Location: eastus"
+    echo ""
+    echo "🔗 CONNECTION INSTRUCTIONS:"
+    echo "   1. Download SSH key from pipeline artifacts"
+    echo "   2. Run: chmod 600 azure-key.pem"
+    echo "   3. Run: ssh -i azure-key.pem azureuser@[PUBLIC_IP]"
+    echo ""
+    echo "📡 To get the public IP, check Terraform outputs above"
+    echo ""
+    echo "⚠️  SECURITY NOTE:"
+    echo "   • SSH port 22 is open to all IPs"
+    echo "   • Download and delete SSH key after use"
+    echo "=============================================="
+  displayName: 'Display Connection Info'

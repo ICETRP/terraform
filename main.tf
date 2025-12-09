@@ -1,4 +1,4 @@
-# main.tf - SIMPLIFIED
+# main.tf - SIMPLIFIED WORKING VERSION
 terraform {
   required_version = ">= 1.0.0"
   required_providers {
@@ -13,15 +13,21 @@ terraform {
   }
 }
 
-# Use environment variables for authentication
+# Provider uses environment variables OR explicit values
 provider "azurerm" {
   features {}
-  # These will come from environment variables set by pipeline
-  # ARM_SUBSCRIPTION_ID and ARM_TENANT_ID
+  
+  # Option 1: Use environment variables (ARM_SUBSCRIPTION_ID, ARM_TENANT_ID)
+  # Option 2: Use explicit values below
+  
+  subscription_id = "f18cee0c-94ae-4dd3-ac8a-a6fd1e37b163"
+  tenant_id       = "c872c2b0-012f-4d75-a07b-7a6fd47d6066"
+  
+  # Use Azure CLI authentication
   use_cli = true
 }
 
-# Variables with defaults - no required values
+# Variables (optional - you can hardcode if you want)
 variable "resource_group_name" {
   default = "ubuntu-vm-rg"
 }
@@ -67,6 +73,7 @@ resource "azurerm_virtual_network" "vnet" {
   resource_group_name = azurerm_resource_group.rg.name
 }
 
+# Subnet
 resource "azurerm_subnet" "subnet" {
   name                 = "ubuntu-subnet"
   resource_group_name  = azurerm_resource_group.rg.name
@@ -74,6 +81,7 @@ resource "azurerm_subnet" "subnet" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
+# Associate NSG with Subnet
 resource "azurerm_subnet_network_security_group_association" "nsg_assoc" {
   subnet_id                 = azurerm_subnet.subnet.id
   network_security_group_id = azurerm_network_security_group.nsg.id
@@ -108,9 +116,10 @@ resource "tls_private_key" "ssh_key" {
   rsa_bits  = 4096
 }
 
+# Save SSH Key
 resource "local_file" "private_key" {
   content         = tls_private_key.ssh_key.private_key_pem
-  filename        = "${path.module}/azure-key.pem"
+  filename        = "azure-key.pem"
   file_permission = "0600"
 }
 
@@ -122,7 +131,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
   size                = "Standard_B2s"
   admin_username      = "azureuser"
   network_interface_ids = [azurerm_network_interface.nic.id]
-
+  
   disable_password_authentication = true
 
   admin_ssh_key {
