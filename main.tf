@@ -28,7 +28,7 @@ provider "azurerm" {
 # Resource Group
 resource "azurerm_resource_group" "rg" {
   name     = "ubuntu-vm-rg"
-  location = "eastus"
+  location = "Southeast Asia"
 }
 
 # Network Security Group
